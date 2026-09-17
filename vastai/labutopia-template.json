@@ -1,0 +1,20 @@
+{
+  "name": "Isaac Sim LabUtopia (RTX, headless)",
+  "image": "ghcr.io/OWNER/REPOSITORY-labutopia",
+  "tag": "latest",
+  "desc": "LabUtopia + Isaac Sim 5.1 for a normal Vast.ai Docker instance",
+  "readme": "Connect over SSH, run verify-gpu, then run labutopia-run as described in the image README.",
+  "env": "-e ACCEPT_EULA=Y -e PRIVACY_CONSENT=Y -e OMNI_KIT_ALLOW_ROOT=1",
+  "onstart": "env | grep _ >> /etc/environment; /usr/local/bin/vast-init",
+  "runtype": "ssh",
+  "ssh_direct": true,
+  "use_ssh": true,
+  "jup_direct": false,
+  "use_jupyter_lab": false,
+  "docker_login_repo": "",
+  "docker_login_user": "",
+  "docker_login_pass": "",
+  "extra_filters": {"gpu_ram": {"gte": 20}, "cuda_max_good": {"gte": 12.6}},
+  "recommended_disk_space": 80,
+  "private": true
+}

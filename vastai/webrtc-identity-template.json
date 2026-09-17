@@ -1,0 +1,20 @@
+{
+  "name": "Isaac Sim experimental WebRTC identity ports",
+  "image": "ghcr.io/OWNER/REPOSITORY-matterix",
+  "tag": "latest",
+  "desc": "Experimental WebRTC startup using Vast.ai identity TCP/UDP ports",
+  "readme": "Unsupported experiment: NVIDIA requires host networking for container WebRTC. Use headless mode when this fails.",
+  "env": "-e ACCEPT_EULA=Y -e PRIVACY_CONSENT=Y -e OMNI_KIT_ALLOW_ROOT=1 -p 70000:70000 -p 70001:70001/udp",
+  "onstart": "env | grep _ >> /etc/environment; /usr/local/bin/vast-init; nohup /usr/local/bin/isaacsim-webrtc >/workspace/logs/webrtc.log 2>&1 &",
+  "runtype": "ssh",
+  "ssh_direct": true,
+  "use_ssh": true,
+  "jup_direct": false,
+  "use_jupyter_lab": false,
+  "docker_login_repo": "",
+  "docker_login_user": "",
+  "docker_login_pass": "",
+  "extra_filters": {"gpu_ram": {"gte": 20}, "cuda_max_good": {"gte": 12.8}},
+  "recommended_disk_space": 80,
+  "private": true
+}
