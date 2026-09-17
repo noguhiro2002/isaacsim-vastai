@@ -2,6 +2,17 @@ diff --git a/main.py b/main.py
 index e120e29..904b944 100644
 --- a/main.py
 +++ b/main.py
+@@ -1,3 +1,10 @@
+ import os
++import sys
+ import argparse
++
++# Claim LabUtopia's local ``utils`` package before Isaac Sim imports another
++# top-level package with the same name.
++PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
++sys.path.insert(0, PROJECT_ROOT)
++import utils  # noqa: F401
+ from isaacsim import SimulationApp
 @@ -13,5 +13,9 @@ def parse_args():
      parser.add_argument('--no-video', action='store_true', 
                         help='Disable video display and saving')
@@ -56,4 +67,10 @@ index e120e29..904b944 100644
      
      while simulation_app.is_running():
          world.step(render=True)
-
+diff --git a/utils/__init__.py b/utils/__init__.py
+new file mode 100644
+index 0000000..a58dc8a
+--- /dev/null
++++ b/utils/__init__.py
+@@ -0,0 +1 @@
++"""LabUtopia project-local utility modules."""

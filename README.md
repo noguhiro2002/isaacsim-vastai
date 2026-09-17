@@ -111,11 +111,11 @@ Matterixのtaskはassetsを参照するため、この構成では実行対象�
 
 ## LabUtopiaを確認する
 
-設定ファイルの軽量testを実行します。
+全設定ファイルをsimulationなしでparseする軽量testです。上流の `tests/test_config_files.py` はunit testではなく、複数のsimulationを長時間実行するrunnerなので、ここでは使いません。
 
 ```bash
 cd /opt/labutopia
-isaac-python -m pytest tests/test_config_files.py -q
+isaac-python -c 'from pathlib import Path; import yaml; files=list(Path("config").glob("*.yaml")); assert files; [yaml.safe_load(p.read_text()) for p in files]; print(f"CONFIGS_OK={len(files)}")'
 ```
 
 1 episodeだけheadless実行し、合成stageをUSDへ保存します。
