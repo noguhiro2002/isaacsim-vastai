@@ -118,18 +118,18 @@ cd /opt/labutopia
 isaac-python -c 'from pathlib import Path; import yaml; files=list(Path("config").glob("*.yaml")); assert files; [yaml.safe_load(p.read_text()) for p in files]; print(f"CONFIGS_OK={len(files)}")'
 ```
 
-1 episodeだけheadless実行し、合成stageをUSDへ保存します。
+実験室sceneをheadlessで構築・resetし、合成stageをUSDへ保存して正常終了するsmoke testです。
 
 ```bash
 labutopia-run \
   --config-name level1_pick \
   --headless \
   --no-video \
-  --max-episodes 1 \
-  --save-usd /workspace/output/labutopia-level1-pick.usda
+  --save-usd /workspace/output/labutopia-level1-pick.usda \
+  --exit-after-save
 ```
 
-通常のデータ収集では `--max-episodes 1` を外します。Hydraの `outputs/` はproject directoryに作られるため、保存したい結果は `/workspace/output` へ移すか、設定の出力先を同directoryへ変更してください。
+実際のepisode実行・データ収集では `--exit-after-save` を外し、必要に応じて `--max-episodes N` を指定します。Hydraの `outputs/` はproject directoryに作られるため、保存したい結果は `/workspace/output` へ移すか、設定の出力先を同directoryへ変更してください。
 
 ## ローカルbuild（内部利用のみ）
 

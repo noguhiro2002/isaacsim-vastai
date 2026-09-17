@@ -13,13 +13,15 @@ index e120e29..904b944 100644
 +sys.path.insert(0, PROJECT_ROOT)
 +import utils  # noqa: F401
  from isaacsim import SimulationApp
-@@ -13,5 +13,9 @@ def parse_args():
+@@ -13,5 +13,11 @@ def parse_args():
      parser.add_argument('--no-video', action='store_true', 
                         help='Disable video display and saving')
 +    parser.add_argument('--max-episodes', type=int, default=None,
 +                       help='Override max_episodes for smoke tests or short runs')
 +    parser.add_argument('--save-usd', type=str, default=None,
 +                       help='Save the composed stage to this USD path after reset')
++    parser.add_argument('--exit-after-save', action='store_true',
++                       help='Exit cleanly after saving USD (for smoke tests)')
      parser.add_argument('--config-name', type=str, default='level3_Heat_Liquid',
                         help='Configuration file name (without .yaml extension)')
      parser.add_argument('--config-dir', type=str, default='config',
@@ -54,16 +56,19 @@ index e120e29..904b944 100644
  
      robot = create_robot(
          cfg.robot.type,
-@@ -97,5 +102,12 @@ def main():
+@@ -97,5 +102,15 @@ def main():
      video_writer = None
      task.reset()
 +
 +    if args.save_usd:
 +        output_path = os.path.abspath(args.save_usd)
 +        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-+        if not omni.usd.get_context().save_as_stage(output_path):
++        if not omni.usd.get_context().get_stage().Export(output_path):
 +            raise RuntimeError(f"Failed to save USD stage: {output_path}")
-+        print(f"USD_SAVED={output_path}")
++        print(f"USD_SAVED={output_path}", flush=True)
++        if args.exit_after_save:
++            simulation_app.close()
++            return
      
      while simulation_app.is_running():
          world.step(render=True)
