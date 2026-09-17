@@ -13,6 +13,8 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ARG MATTERIX_REPOSITORY=https://github.com/AccelerationConsortium/Matterix.git
 ARG MATTERIX_REF=5d86bd6e4fc7dd6ea83dead1d076c0176440be9e
 ARG ISAACLAB_VERSION=3.0.0b2.post1
+ARG TORCH_VERSION=2.11.0
+ARG TORCHVISION_VERSION=0.26.0
 
 LABEL org.opencontainers.image.title="Matterix on Isaac Sim for Vast.ai" \
       org.opencontainers.image.description="Matterix and Isaac Lab in a single GPU container" \
@@ -64,7 +66,7 @@ RUN mkdir -p "${MATTERIX_PATH}" && \
 RUN ln -sfn /isaac-sim "${MATTERIX_PATH}/_isaac_sim" && \
     /isaac-sim/python.sh -m pip install --upgrade pip && \
     /isaac-sim/python.sh -m pip install \
-      torch==2.10.0 torchvision==0.25.0 \
+      "torch==${TORCH_VERSION}" "torchvision==${TORCHVISION_VERSION}" \
       --index-url https://download.pytorch.org/whl/cu128 && \
     /isaac-sim/python.sh -m pip install \
       "isaaclab[all]==${ISAACLAB_VERSION}" \

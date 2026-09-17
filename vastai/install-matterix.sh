@@ -9,6 +9,8 @@ matterix_repository="${MATTERIX_REPOSITORY:-https://github.com/AccelerationConso
 matterix_ref="${MATTERIX_REF:-5d86bd6e4fc7dd6ea83dead1d076c0176440be9e}"
 matterix_path="${MATTERIX_PATH:-/opt/matterix}"
 isaaclab_version="${ISAACLAB_VERSION:-3.0.0b2.post1}"
+torch_version="${MATTERIX_TORCH_VERSION:-2.11.0}"
+torchvision_version="${MATTERIX_TORCHVISION_VERSION:-0.26.0}"
 
 bootstrap_install_helpers matterix
 
@@ -35,7 +37,7 @@ EOF
 ln -sfn /isaac-sim "${matterix_path}/_isaac_sim"
 /isaac-sim/python.sh -m pip install --upgrade pip
 /isaac-sim/python.sh -m pip install \
-  torch==2.10.0 torchvision==0.25.0 \
+  "torch==${torch_version}" "torchvision==${torchvision_version}" \
   --index-url https://download.pytorch.org/whl/cu128
 /isaac-sim/python.sh -m pip install \
   "isaaclab[all]==${isaaclab_version}" \

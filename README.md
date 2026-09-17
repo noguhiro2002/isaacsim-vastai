@@ -10,10 +10,10 @@ RTX 3090 などを載せた Vast.ai の通常 Docker インスタンスで、Isa
 
 | 構成 | upstream commit | Python | Isaac Sim | Isaac Lab | PyTorch | 用途 |
 |---|---|---:|---:|---:|---:|---|
-| Matterix | `5d86bd6` | 3.12 | 6.0.1 | 3.0.0b2.post1 | 2.10.0 + cu128 | headless、USD smoke test、コード導入確認 |
+| Matterix | `5d86bd6` | 3.12 | 6.0.1 | 3.0.0b2.post1 | 2.11.0 + cu128 | headless、USD smoke test、コード導入確認 |
 | LabUtopia | `8df7278` | 3.11 | 5.1.0 | なし | 2.9.0 + cu126 | 非商用の研究・教育、headless、データ生成、USD保存 |
 
-Matterix の[現行README](https://github.com/AccelerationConsortium/Matterix/blob/5d86bd6e4fc7dd6ea83dead1d076c0176440be9e/README.md)は Isaac Lab 3.0.0b2.post1 と PyTorch 2.10.0 を指定しています。この Isaac Lab wheel に合わせて Isaac Sim 6.0.1 を使います。公式 `docker/` の永続化方法やroot実行設定は参考にしましたが、同ディレクトリには古いIsaac Sim指定も残るため、そのままでは使っていません。
+Matterix の[現行README](https://github.com/AccelerationConsortium/Matterix/blob/5d86bd6e4fc7dd6ea83dead1d076c0176440be9e/README.md)は Isaac Lab 3.0.0b2.post1 とPyTorch 2.10.0を指定しています。Isaac Labのwheelは `torch>=2.10` とIsaac Sim 6.0.1を要求しますが、6.0.1公式コンテナのKit extensionはTorch 2.11を同梱しています。NCCL ABIの競合を避けるため、本構成では2.11.0に揃えます。公式 `docker/` の永続化方法やroot実行設定は参考にしましたが、同ディレクトリには古いIsaac Sim指定も残るため、そのままでは使っていません。
 
 LabUtopia は[現行README](https://github.com/Rui-li023/LabUtopia/blob/8df72784265c375a327ffa3f0a0cf8c676f229a7/README.md)に合わせて Isaac Sim 5.1.0 を使います。上流の `main.py` は `--headless` を解析しても `SimulationApp` に `headless=False` を渡すため、起動時に[最小patch](docker/labutopia/labutopia-headless.patch)を適用します。
 
