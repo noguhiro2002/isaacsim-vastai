@@ -1,5 +1,9 @@
 # syntax=docker/dockerfile:1.7
 
+# LOCAL/INTERNAL, NON-COMMERCIAL USE ONLY. Do not publish the resulting image
+# unless your NVIDIA license expressly permits redistribution of Isaac
+# Sim/Omniverse Kit. LabUtopia assets are CC BY-NC 4.0.
+
 ARG ISAAC_SIM_IMAGE=nvcr.io/nvidia/isaac-sim:5.1.0
 FROM ${ISAAC_SIM_IMAGE}
 
@@ -7,14 +11,13 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ARG LABUTOPIA_REPOSITORY=https://github.com/Rui-li023/LabUtopia.git
 ARG LABUTOPIA_REF=8df72784265c375a327ffa3f0a0cf8c676f229a7
+ARG LABUTOPIA_ACCEPT_CC_BY_NC_4_0=N
 
 LABEL org.opencontainers.image.title="LabUtopia on Isaac Sim for Vast.ai" \
       org.opencontainers.image.description="LabUtopia and Isaac Sim 5.1 in a single GPU container" \
       org.opencontainers.image.source="https://github.com/Rui-li023/LabUtopia"
 
-ENV ACCEPT_EULA=Y \
-    PRIVACY_CONSENT=Y \
-    OMNI_KIT_ALLOW_ROOT=1 \
+ENV OMNI_KIT_ALLOW_ROOT=1 \
     NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=all \
     LABUTOPIA_PATH=/opt/labutopia \
@@ -40,7 +43,9 @@ RUN --mount=type=cache,target=/var/cache/apt \
       libglib2.0-0 && \
     rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p "${LABUTOPIA_PATH}" && \
+RUN test "${LABUTOPIA_ACCEPT_CC_BY_NC_4_0}" = "Y" || \
+      (echo 'Set --build-arg LABUTOPIA_ACCEPT_CC_BY_NC_4_0=Y after accepting the non-commercial asset terms.' >&2; exit 78) && \
+    mkdir -p "${LABUTOPIA_PATH}" && \
     git -C "${LABUTOPIA_PATH}" init && \
     git -C "${LABUTOPIA_PATH}" remote add origin "${LABUTOPIA_REPOSITORY}" && \
     for attempt in 1 2 3; do \
@@ -71,6 +76,7 @@ RUN /isaac-sim/python.sh -m pip install \
 
 COPY docker/common/ /opt/vast-isaac/
 COPY docker/labutopia/labutopia-run.sh /opt/vast-isaac/labutopia-run.sh
+COPY LICENSE THIRD_PARTY_NOTICES.md /opt/vast-isaac/
 
 RUN install -m 0755 /opt/vast-isaac/vast-init.sh /usr/local/bin/vast-init && \
     install -m 0755 /opt/vast-isaac/entrypoint.sh /usr/local/bin/vast-entrypoint && \
@@ -93,4 +99,3 @@ WORKDIR /opt/labutopia
 VOLUME ["/workspace"]
 ENTRYPOINT ["/usr/local/bin/vast-entrypoint"]
 CMD []
-

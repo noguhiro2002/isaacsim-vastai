@@ -1,5 +1,10 @@
 # syntax=docker/dockerfile:1.7
 
+# LOCAL/INTERNAL USE ONLY. Do not publish the resulting image unless your
+# NVIDIA license expressly permits redistribution of Isaac Sim/Omniverse Kit.
+# Matterix_assets is intentionally excluded because its pinned upstream commit
+# has no explicit license.
+
 ARG ISAAC_SIM_IMAGE=nvcr.io/nvidia/isaac-sim:6.0.1
 FROM ${ISAAC_SIM_IMAGE}
 
@@ -13,9 +18,7 @@ LABEL org.opencontainers.image.title="Matterix on Isaac Sim for Vast.ai" \
       org.opencontainers.image.description="Matterix and Isaac Lab in a single GPU container" \
       org.opencontainers.image.source="https://github.com/AccelerationConsortium/Matterix"
 
-ENV ACCEPT_EULA=Y \
-    PRIVACY_CONSENT=Y \
-    OMNI_KIT_ALLOW_ROOT=1 \
+ENV OMNI_KIT_ALLOW_ROOT=1 \
     NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=all \
     MATTERIX_PATH=/opt/matterix \
@@ -53,9 +56,10 @@ RUN mkdir -p "${MATTERIX_PATH}" && \
       sleep $((attempt * 10)); \
     done && \
     git -C "${MATTERIX_PATH}" checkout --detach FETCH_HEAD && \
-    git -C "${MATTERIX_PATH}" submodule update --init --recursive --depth 1 && \
-    git -C "${MATTERIX_PATH}" lfs pull && \
-    git -C "${MATTERIX_PATH}" submodule foreach --recursive 'git lfs pull'
+    mkdir -p "${MATTERIX_PATH}/source/matterix_assets/data" && \
+    printf '%s\n' \
+      'Matterix_assets was not downloaded because its pinned commit has no explicit license.' \
+      > "${MATTERIX_PATH}/source/matterix_assets/data/ASSETS_NOT_INSTALLED.md"
 
 RUN ln -sfn /isaac-sim "${MATTERIX_PATH}/_isaac_sim" && \
     /isaac-sim/python.sh -m pip install --upgrade pip && \
@@ -74,6 +78,7 @@ RUN /isaac-sim/python.sh -m pip install \
     /isaac-sim/python.sh -m pip check
 
 COPY docker/common/ /opt/vast-isaac/
+COPY LICENSE THIRD_PARTY_NOTICES.md /opt/vast-isaac/
 
 RUN install -m 0755 /opt/vast-isaac/vast-init.sh /usr/local/bin/vast-init && \
     install -m 0755 /opt/vast-isaac/entrypoint.sh /usr/local/bin/vast-entrypoint && \
@@ -96,4 +101,3 @@ WORKDIR /opt/matterix
 VOLUME ["/workspace"]
 ENTRYPOINT ["/usr/local/bin/vast-entrypoint"]
 CMD []
-
