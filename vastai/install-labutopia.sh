@@ -34,9 +34,10 @@ git -C "${labutopia_path}" lfs install --local
 git -C "${labutopia_path}" lfs pull
 
 patch_file="${bootstrap_repo_root}/docker/labutopia/labutopia-headless.patch"
-if git -C "${labutopia_path}" apply --check "${patch_file}"; then
-  git -C "${labutopia_path}" apply "${patch_file}"
-elif ! git -C "${labutopia_path}" apply --reverse --check "${patch_file}"; then
+patch_options=(--ignore-space-change --ignore-whitespace)
+if git -C "${labutopia_path}" apply "${patch_options[@]}" --check "${patch_file}"; then
+  git -C "${labutopia_path}" apply "${patch_options[@]}" "${patch_file}"
+elif ! git -C "${labutopia_path}" apply "${patch_options[@]}" --reverse --check "${patch_file}"; then
   bootstrap_log "LabUtopia patch does not apply to ${labutopia_ref}"
   exit 65
 fi
