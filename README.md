@@ -1,6 +1,6 @@
 # Vast.ai で Matterix / LabUtopia を動かす
 
-RTX 3090 などを載せた Vast.ai の通常 Docker インスタンスで、Isaac Sim、Matterix、LabUtopia を headless 実行するための構成です。VM と Docker-in-Docker は使いません。
+RTX 3090などを載せたVast.ai VMまたは通常Dockerインスタンスで、Isaac Sim、Matterix、LabUtopiaを動かすための構成です。GUI接続には、host networkを利用できるVMとTailscaleの組み合わせを推奨します。通常Dockerはheadless実行用として残しています。
 
 このリポジトリは完成済みコンテナイメージを配布しません。Vast.ai は NVIDIA 公式の Isaac Sim イメージを直接取得し、起動時に各プロジェクトを上流リポジトリからインストールします。これにより、Isaac Sim/Omniverse Kit や第三者assetsを当リポジトリ経由で再配布しません。
 
@@ -29,7 +29,79 @@ LabUtopia は[現行README](https://github.com/Rui-li023/LabUtopia/blob/8df72784
 
 NVIDIAによると、Isaac SimとOmniverse Kitを第三者へ配布する場合はNVIDIA AI Enterpriseが必要になることがあります。このリポジトリのローカルbuild機能で作ったイメージを、権限を確認せず公開しないでください。
 
-## Vast.ai テンプレート
+## Vast.ai VMを一発で構築する（GUI推奨経路）
+
+Vast.aiで公式のUbuntu 22.04 VM templateを選び、作成前にSSH公開鍵を登録してください。RTX 3090（24 GB VRAM）、disk 120 GB以上、reliability 0.98以上、十分なdownload速度を目安にします。VMは通常DockerインスタンスよりOS分の容量を使うため、80 GBは余裕がありません。
+
+SSH接続後、Matterixなら次を実行します。
+
+```bash
+curl -fsSLo /tmp/isaac-vm-setup.sh \
+  https://raw.githubusercontent.com/noguhiro2002/isaacsim-vastai/main/vm/setup.sh
+sudo NVIDIA_ACCEPT_EULA=Y bash /tmp/isaac-vm-setup.sh matterix
+```
+
+LabUtopiaの場合は、非商用ライセンス条件を確認した上で次を実行します。
+
+```bash
+curl -fsSLo /tmp/isaac-vm-setup.sh \
+  https://raw.githubusercontent.com/noguhiro2002/isaacsim-vastai/main/vm/setup.sh
+sudo NVIDIA_ACCEPT_EULA=Y LABUTOPIA_ACCEPT_CC_BY_NC_4_0=Y \
+  bash /tmp/isaac-vm-setup.sh labutopia
+```
+
+スクリプトはGPU passthroughを確認し、Docker、NVIDIA Container Toolkit、Tailscaleを導入します。その後、対象に合うNVIDIA公式Isaac Sim imageを取得し、MatterixまたはLabUtopiaをpersistent workspaceへ導入して、host network上でWebRTCを起動します。途中でTailscaleの認証URLが表示されたら、ブラウザで開いてVMを自分のtailnetへ参加させてください。初回は大きなimage、Python packages、assets、shader cacheを取得するため、回線によっては数十分かかります。
+
+無人構築では、Tailscale管理画面で作ったone-timeかつpre-authorizedのauth keyを一時的に渡せます。shell historyにkeyを残さない例です。
+
+```bash
+read -rsp 'Tailscale auth key: ' TS_AUTHKEY; echo
+sudo env NVIDIA_ACCEPT_EULA=Y TS_AUTHKEY="$TS_AUTHKEY" \
+  bash /tmp/isaac-vm-setup.sh matterix
+unset TS_AUTHKEY
+```
+
+### MacからTailscale経由で接続する
+
+MacへTailscaleと[Isaac Sim WebRTC Streaming Client](https://docs.isaacsim.omniverse.nvidia.com/latest/installation/manual_livestream_clients.html)を導入し、VMと同じtailnetへ接続します。VM側で次を実行します。
+
+```bash
+isaac-vm status
+isaac-vm tailscale-ip
+```
+
+Streaming ClientのServer欄には、表示された `100.x.y.z` 形式のTailscale IPv4だけを入力します。port番号、Vast.aiの公開IP、SSH tunnelは指定しません。TCP 49100とUDP 47998はVMの `tailscale0` とlocalhostからだけ到達できるよう、systemd管理のfirewall ruleを自動設定します。
+
+NVIDIAの現行手順ではcontainer streamingに `--network=host` が必須で、TCP 49100がsignaling、UDP 47998が映像streamです。またstreaming endpoint自体に認証・暗号化はありません。このため、Tailscaleに加えてtailnet policyでも接続元を制限してください。
+
+### 運用・確認コマンド
+
+```bash
+isaac-vm status       # Tailscale、container、GPU、listen port
+isaac-vm verify       # GPUとMatterix/LabUtopiaの導入状態
+isaac-vm logs         # setupおよびIsaac Simのlogを追跡
+isaac-vm shell        # container内のshell
+isaac-vm restart      # containerを再起動
+```
+
+GUIを使わずheadless smoke testとUSD保存を優先する場合は、最初からWebRTCを無効にします。
+
+```bash
+sudo NVIDIA_ACCEPT_EULA=Y ENABLE_WEBRTC=N \
+  bash /tmp/isaac-vm-setup.sh matterix
+isaac-vm smoke
+```
+
+WebRTC稼働中に2個目のIsaac Simを同じGPUで起動しないよう、`isaac-vm smoke` はWebRTC modeでは実行を拒否します。モード変更時はpersistent workspaceを保持したままmanaged containerだけを作り直します。
+
+```bash
+sudo NVIDIA_ACCEPT_EULA=Y ENABLE_WEBRTC=N FORCE_RECREATE=Y \
+  bash /tmp/isaac-vm-setup.sh matterix
+```
+
+data、cache、log、USDなどは `/srv/isaacsim-vastai/<target>/workspace` に残ります。VM自体を破棄すると消えるため、必要な成果物は事前に手元または外部storageへ退避してください。
+
+## Vast.ai 通常Dockerテンプレート（headless用）
 
 通常は次のJSONをVast.aiのTemplates画面へ転記します。
 
@@ -171,8 +243,11 @@ LabUtopiaのIsaac Sim 5.1はmedia UDP port 47998を使うため、今回のIdent
 - LabUtopiaのupstream commitを変えると、headless patchが適用できない場合があります。
 - RTX 3090の24 GB VRAMは、高解像度camera、多数environment、複雑なsceneでは不足する場合があります。
 - 初回起動は公式イメージ、Python packages、LabUtopiaのGit LFS assets、shader cacheを取得するため時間がかかります。
+- VM経路はVast.aiのUbuntu 22.04 VM templateを基準にしています。GPU passthrough、`nvidia-smi`、systemdが正常なhostが必要です。
+- WebRTCにはNVENC対応GPUが必要で、一度に1 clientだけ接続できます。TailscaleがDERP relayになる環境では遅延や画質低下が起こり得ます。
+- `vm/setup.sh` はUbuntu 22.04/24.04 x86_64専用で、hostのNVIDIA driver自体は導入しません。
 - Vast.ai hostごとにdriver、RAM、disk I/O、UDP品質が異なります。安価なofferほど個体差があります。
-- WebRTCは通常Docker/NATでは非対応です。headless運用を標準経路とします。
+- WebRTCはVM + host network + Tailscaleを推奨経路とし、通常Docker/NATでは非対応です。
 
 ## ディレクトリ
 
@@ -184,3 +259,4 @@ LabUtopiaのIsaac Sim 5.1はmedia UDP port 47998を使うため、今回のIdent
 | `/workspace/logs` | bootstrap、Omniverse、WebRTC log |
 | `/workspace/output` | USD、動画、datasetなどの成果物 |
 | `/workspace/.setup` | 導入済みcommit marker |
+| `/srv/isaacsim-vastai/<target>/workspace` | VM経路のpersistent workspace |

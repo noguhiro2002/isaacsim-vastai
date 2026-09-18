@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+config_file="${ISAAC_VM_CONFIG:-/etc/isaacsim-vm.conf}"
+if [[ ! -r "${config_file}" ]]; then
+  echo "isaac-vm: ${config_file} was not found; run vm/setup.sh first" >&2
+  exit 66
+fi
+source "${config_file}"
+
+container_name="${ISAAC_VM_CONTAINER_NAME:?missing container name}"
+docker_command=(docker)
+if [[ "${EUID}" -ne 0 ]]; then
+  docker_command=(sudo docker)
+fi
+
+usage() {
+  cat <<EOF
+usage: isaac-vm <command> [arguments]
+
+commands:
+  status             show Tailscale, container, GPU, and streaming ports
+  verify             verify the GPU and target installation
+  logs               follow setup and Isaac Sim logs
+  shell              open a root shell inside the container
+  smoke              create and validate a minimal USD file
+  exec COMMAND...    run an arbitrary command inside the container
+  start|stop|restart control the container
+  tailscale-ip       print the VM's Tailscale IPv4 address
+EOF
+}
+
+command_name="${1:-}"
+if [[ $# -gt 0 ]]; then
+  shift
+fi
+
+case "${command_name}" in
+  status)
+    printf 'target: %s\n' "${ISAAC_VM_TARGET}"
+    printf 'image: %s\n' "${ISAAC_VM_IMAGE}"
+    printf 'tailscale IPv4: %s\n' "$(tailscale ip -4 | head -n 1)"
+    "${docker_command[@]}" ps -a --filter "name=^/${container_name}$"
+    container_running="$("${docker_command[@]}" inspect --format '{{.State.Running}}' "${container_name}")"
+    if [[ "${container_running}" == "true" ]]; then
+      "${docker_command[@]}" exec "${container_name}" nvidia-smi \
+        --query-gpu=name,driver_version,memory.used,memory.total,utilization.gpu \
+        --format=csv,noheader
+    else
+      printf 'container is stopped\n'
+    fi
+    ss -lntup | grep -E ':(49100|47998)\b' || true
+    ;;
+  verify)
+    "${docker_command[@]}" exec "${container_name}" verify-gpu
+    case "${ISAAC_VM_TARGET}" in
+      matterix)
+        "${docker_command[@]}" exec "${container_name}" \
+          git -C /opt/matterix rev-parse HEAD
+        "${docker_command[@]}" exec "${container_name}" isaac-python -c \
+          'import importlib.metadata as m; print("isaaclab=" + m.version("isaaclab"))'
+        ;;
+      labutopia)
+        "${docker_command[@]}" exec -w /opt/labutopia "${container_name}" \
+          isaac-python -c \
+          'from pathlib import Path; import yaml; f=list(Path("config").glob("*.yaml")); assert f; [yaml.safe_load(p.read_text()) for p in f]; print(f"configs={len(f)}")'
+        ;;
+    esac
+    ;;
+  logs)
+    exec "${docker_command[@]}" logs --tail 200 -f "${container_name}"
+    ;;
+  shell)
+    exec "${docker_command[@]}" exec -it "${container_name}" /bin/bash
+    ;;
+  smoke)
+    if [[ "${ISAAC_VM_WEBRTC:-N}" == "Y" ]]; then
+      cat >&2 <<'EOF'
+isaac-vm: this container is configured to run WebRTC. A second Isaac Sim
+process is unsafe.
+For a headless smoke-test VM, re-run setup with ENABLE_WEBRTC=N and
+FORCE_RECREATE=Y. Persistent workspace data will be retained.
+EOF
+      exit 75
+    fi
+    "${docker_command[@]}" exec "${container_name}" isaac-usd-smoke
+    "${docker_command[@]}" exec "${container_name}" \
+      test -s /workspace/output/isaac-headless-smoke.usda
+    printf 'USD smoke test passed: %s/output/isaac-headless-smoke.usda\n' \
+      "${ISAAC_VM_ROOT}/${ISAAC_VM_TARGET}/workspace"
+    ;;
+  exec)
+    if [[ $# -eq 0 ]]; then
+      usage >&2
+      exit 64
+    fi
+    exec "${docker_command[@]}" exec "${container_name}" "$@"
+    ;;
+  start|stop|restart)
+    exec "${docker_command[@]}" "${command_name}" "${container_name}"
+    ;;
+  tailscale-ip)
+    tailscale ip -4 | head -n 1
+    ;;
+  -h|--help|help|'')
+    usage
+    ;;
+  *)
+    usage >&2
+    exit 64
+    ;;
+esac
