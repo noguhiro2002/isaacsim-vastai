@@ -1,8 +1,8 @@
 diff --git a/main.py b/main.py
-index 2deb433..cbd4dca 100644
+index 2deb433..500826f 100644
 --- a/main.py
 +++ b/main.py
-@@ -1,5 +1,12 @@
+@@ -1,30 +1,81 @@
  import os
 +import sys
  import argparse
@@ -15,9 +15,15 @@ index 2deb433..cbd4dca 100644
  from isaacsim import SimulationApp
 
  # Parse command line arguments
-@@ -10,21 +17,63 @@ def parse_args():
+ def parse_args():
+     parser = argparse.ArgumentParser(description='LabSim Simulation Environment')
+-    parser.add_argument('--backend', type=str, default='numpy',
+-                       choices=['numpy', 'gpu'],
++    parser.add_argument('--backend', type=str, default='numpy',
++                       choices=['numpy', 'gpu'],
                         help='Backend choice: numpy (CPU) or gpu')
-     parser.add_argument('--headless', action='store_true',
+-    parser.add_argument('--headless', action='store_true',
++    parser.add_argument('--headless', action='store_true',
                         help='Run in headless mode (default is with GUI)')
 -    parser.add_argument('--no-video', action='store_true',
 +    parser.add_argument('--no-video', action='store_true',
@@ -36,6 +42,8 @@ index 2deb433..cbd4dca 100644
 +                       help='Stream viewport height (default: 720)')
 +    parser.add_argument('--viewport-camera', type=str, default=None,
 +                       help='USD camera prim shown in the streamed viewport (defaults to the first task camera)')
++    parser.add_argument('--disable-task-cameras', action='store_true',
++                       help='Skip Replicator sensor reads while keeping the streamed viewport active')
 +    parser.add_argument('--max-episodes', type=int, default=None,
 +                       help='Override max_episodes for smoke tests or short runs')
 +    parser.add_argument('--save-usd', type=str, default=None,
@@ -84,7 +92,7 @@ index 2deb433..cbd4dca 100644
  }
 
  simulation_app = SimulationApp(simulation_config)
-@@ -40,6 +89,11 @@ from isaacsim.core.utils.stage import add_reference_to_stage
+@@ -40,6 +91,11 @@ from isaacsim.core.utils.stage import add_reference_to_stage
  import omni.usd
  from isaacsim.core.utils import extensions
 
@@ -96,16 +104,27 @@ index 2deb433..cbd4dca 100644
  extensions.enable_extension("omni.physx.bundle")
  extensions.enable_extension("omni.usdphysics.ui")
 
-@@ -53,6 +107,8 @@ def main():
+@@ -53,6 +109,14 @@ def main():
      cfg = hydra.compose(config_name=args.config_name)
      os.makedirs(cfg.multi_run.run_dir, exist_ok=True)
      OmegaConf.save(cfg, cfg.multi_run.run_dir + "/config.yaml")
++    viewport_camera_path = args.viewport_camera
++    if viewport_camera_path is None and len(cfg.cameras) > 0:
++        viewport_camera_path = str(cfg.cameras[0].prim_path)
++    if args.disable_task_cameras:
++        cfg.cameras = []
++        print("LABUTOPIA_TASK_CAMERAS=disabled", flush=True)
 +    if args.max_episodes is not None:
 +        cfg.max_episodes = args.max_episodes
 
      # Set backend based on command line arguments
      if args.backend == 'gpu':
-@@ -65,10 +121,10 @@ def main():
+@@ -61,25 +125,25 @@ def main():
+         physx_interface.overwrite_gpu_setting(1)
+     else:
+         world = World(stage_units_in_meters=1.0, physics_prim_path="/physicsScene", backend="numpy")
+-
++
      # Override configuration based on command line arguments
      if args.no_video:
          save_video = False
@@ -118,26 +137,49 @@ index 2deb433..cbd4dca 100644
 
      robot = create_robot(
          cfg.robot.type,
-@@ -96,6 +152,34 @@ def main():
-
+         position=np.array(cfg.robot.position)
+     )
+-
++
+     stage = omni.usd.get_context().get_stage()
+     add_reference_to_stage(usd_path=os.path.abspath(cfg.usd_path), prim_path="/World")
+-
++
+     ObjectUtils.get_instance(stage)
+-
++
+     task = create_task(
+         cfg.task_type,
+         cfg=cfg,
+@@ -87,28 +151,53 @@ def main():
+         stage=stage,
+         robot=robot,
+     )
+-
++
+     task_controller = create_controller(
+         cfg.controller_type,
+         cfg=cfg,
+         robot=robot,
+     )
+-
++
      video_writer = None
      task.reset()
+-
 +
 +    if args.livestream:
 +        from omni.kit.viewport.utility import get_active_viewport
 +
 +        viewport = get_active_viewport()
-+        camera_path = args.viewport_camera
-+        if camera_path is None and len(cfg.cameras) > 0:
-+            camera_path = str(cfg.cameras[0].prim_path)
 +        if viewport is None:
 +            raise RuntimeError('No active viewport is available for livestreaming')
-+        if camera_path:
-+            viewport.set_active_camera(camera_path)
++        if viewport_camera_path:
++            viewport.set_active_camera(viewport_camera_path)
 +        simulation_app.update()
 +        print(
 +            f"LABUTOPIA_WEBRTC_READY={args.public_ip}:{args.signal_port} "
-+            f"camera={camera_path or 'default'}",
++            f"camera={viewport_camera_path or 'default'}",
 +            flush=True,
 +        )
 +
@@ -150,9 +192,58 @@ index 2deb433..cbd4dca 100644
 +        if args.exit_after_save:
 +            simulation_app.close()
 +            return
-
++
      while simulation_app.is_running():
          world.step(render=True)
+-
++
+         if world.is_stopped():
+             task_controller.reset_needed = True
+-
++
+         if world.is_playing():
+             if task_controller.need_reset() or task.need_reset():
+                 if video_writer is not None:
+                     video_writer.release()
+                     video_writer = None
+-
++
+                 task_controller.reset()
+                 if task_controller.episode_num() >= cfg.max_episodes:
+                     task_controller.close()
+@@ -116,13 +205,13 @@ def main():
+                     cv2.destroyAllWindows()
+                     break
+                 task.reset()
+-
++
+                 continue
+-
++
+             state = task.step()
+             if state is None:
+                 continue
+-
++
+             action, done, is_success = task_controller.step(state)
+             if action is not None:
+                 robot.get_articulation_controller().apply_action(action)
+@@ -130,13 +219,13 @@ def main():
+                 task_controller.print_failure_reason()
+                 task.on_task_complete(is_success)
+                 continue
+-
++
+             if save_video or show_video:
+                 camera_images = []
+                 for _, image_data in state['camera_display'].items():
+                     display_img = cv2.cvtColor(image_data.transpose(1, 2, 0), cv2.COLOR_RGB2BGR)
+                     camera_images.append(display_img)
+-
++
+                 if camera_images:
+                     combined_img = np.hstack(camera_images)
+                     total_width = 0
 diff --git a/utils/__init__.py b/utils/__init__.py
 new file mode 100644
 index 0000000..ac95afc

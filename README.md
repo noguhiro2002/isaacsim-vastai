@@ -411,6 +411,7 @@ isaac-vm exec env \
     --config-name level5_Navigation \
     --livestream \
     --no-video \
+    --disable-task-cameras \
     --viewport-camera /World/Ridgebase/base_link/Camera_01 \
     --width 960 \
     --height 540
@@ -425,6 +426,19 @@ LABUTOPIA_WEBRTC_READY=<Tailscale-IP>:49100 camera=/World/Ridgebase/base_link/Ca
 Clientではmobile robotの移動に伴ってlab背景が変化します。episode完了後にresetが
 行われると `Episode Stats: Success Rate = ...` が表示されます。前方視点にする場合は
 `--viewport-camera` を省略するか、`/World/Ridgebase/base_link/Camera` を指定します。
+`--disable-task-cameras` はdataset用のReplicator camera読出しだけを止め、WebRTCの
+viewportと物理・自律走行は維持します。Level 5で `carb.cudainterop.plugin` の
+`cudaErrorNoDevice` に続いてReplicator overscanの `NoneType` 例外が出る場合の
+視覚デモ用回避策です。camera画像を含むdataset生成ではこのoptionを使えません。
+回避策を使う前にhostとcontainerの両方でGPUが見えることを確認します。
+
+```bash
+nvidia-smi
+isaac-vm exec nvidia-smi
+```
+
+どちらかが失敗する場合はcamera処理ではなくhost driverまたはGPU passthroughの問題なので、
+VMを再起動するか別hostへ移してください。両方が成功する場合に上記optionを使います。
 
 Navigationが動いた後、最も包括的なデモを次で実行します。
 
@@ -439,6 +453,7 @@ isaac-vm exec env \
     --config-name level5_Mobile_manipulation \
     --livestream \
     --no-video \
+    --disable-task-cameras \
     --viewport-camera /World/Ridgebase/base_link/Camera_01 \
     --width 960 \
     --height 540

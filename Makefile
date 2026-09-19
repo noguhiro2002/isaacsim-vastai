@@ -16,7 +16,8 @@ check: check-distribution
 	bash -n docker/common/*.sh docker/labutopia/*.sh vastai/*.sh vm/*.sh vm/isaac-vm
 	grep -q -- '--user root' vm/setup.sh
 	grep -q 'omni.services.livestream.nvcf' docker/labutopia/labutopia-headless.patch
-	grep -q 'labutopia_ref}:webrtc-v1' vastai/install-labutopia.sh
+	grep -q -- '--disable-task-cameras' docker/labutopia/labutopia-headless.patch
+	grep -q 'labutopia_ref}:webrtc-v2' vastai/install-labutopia.sh
 	python3 -c "compile(open('docker/common/isaac-usd-smoke.py', encoding='utf-8').read(), 'docker/common/isaac-usd-smoke.py', 'exec')"
 	python3 -m json.tool vastai/matterix-template.json >/dev/null
 	python3 -m json.tool vastai/labutopia-template.json >/dev/null
