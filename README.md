@@ -11,7 +11,7 @@ RTX 3090などを載せたVast.ai VMまたは通常Dockerインスタンスで�
 | 構成 | upstream commit | Python | Isaac Sim | Isaac Lab | PyTorch | 用途 |
 |---|---|---:|---:|---:|---:|---|
 | Matterix | `5d86bd6` | 3.12 | 6.0.1 | 3.0.0b2.post1 | 2.11.0 + cu128 | headless、USD smoke test、利用者提供assetsで公式workflow + WebRTC確認 |
-| LabUtopia | `8df7278` | 3.11 | 5.1.0 | なし | 2.9.0 + cu126 | 非商用の研究・教育、headless、データ生成、USD保存 |
+| LabUtopia | `8df7278` | 3.11 | 5.1.0 | なし | 2.9.0 + cu126 | 非商用の研究・教育、headless、データ生成、USD保存、VM + WebRTC確認 |
 
 Matterix の[現行README](https://github.com/AccelerationConsortium/Matterix/blob/5d86bd6e4fc7dd6ea83dead1d076c0176440be9e/README.md)は Isaac Lab 3.0.0b2.post1 とPyTorch 2.10.0を指定しています。Isaac Labのwheelは `torch>=2.10` とIsaac Sim 6.0.1を要求しますが、6.0.1公式コンテナのKit extensionはTorch 2.11を同梱しています。NCCL ABIの競合を避けるため、本構成では2.11.0に揃えます。公式 `docker/` の永続化方法やroot実行設定は参考にしましたが、同ディレクトリには古いIsaac Sim指定も残るため、そのままでは使っていません。
 
@@ -305,6 +305,10 @@ patchはIsaac Sim 5.1公式Python livestream方式を追加します。`--livest
 headless appを起動しつつUIをstream対象として残し、最初のtask cameraをactive
 viewportへ設定します。
 
+2026-09-19に、RTX 4060 Ti 16 GB、NVIDIA driver `580.95.05`、Vast.ai VM、
+Docker host network、Tailscaleの構成で、`level1_pick` のtask実行とMac版
+Isaac Sim WebRTC Streaming Clientへの映像表示を確認しました。
+
 汎用の `isaacsim-webrtc` とLabUtopiaを同時起動しないよう、managed containerは
 待機modeにします。既存環境をWebRTC対応版へ更新する場合も、persistent workspaceは
 保持されます。
@@ -346,6 +350,105 @@ RTX 4060 Ti 16 GBなどで負荷が高い場合は、最初に `--width 960 --he
 下げてください。終了は起動terminalの `Ctrl+C` です。WebRTC endpointには
 認証・暗号化がないため、この手順ではfirewallでTailscaleからの接続だけを許可します。
 
+#### 成功条件と正常なwarning
+
+既存環境の更新または初回setupは、次の3行まで到達すれば成功です。
+
+```text
+[bootstrap] LabUtopia installed from upstream for an accepted CC BY-NC 4.0 use
+[vm-setup] labutopia installation completed
+Vast.ai VM setup completed.
+```
+
+依存関係導入中の次のmessageは、この構成では既知の非致命的warningです。
+
+```text
+nvidia-srl-usd-to-urdf ... requires usd-core ... which is not installed
+```
+
+PyPI版 `usd-core` はIsaac Sim同梱の `pxr` / USD ABIをshadowする可能性があるため、
+意図的に導入していません。後続に `Successfully installed ...` と上記の
+`[bootstrap] LabUtopia installed ...` があれば、このresolver warningだけを理由に
+追加インストールしないでください。rootユーザーに対するpip warningも、専用container内では
+想定内です。
+
+各確認commandの成功条件は次のとおりです。
+
+| 段階 | command | 成功条件 |
+|---|---|---|
+| 導入確認 | `isaac-vm verify` | GPU情報と正数の `configs=N` を表示し、終了code 0 |
+| scene/USD | `level1_pick --save-usd ... --exit-after-save` | `USD_SAVED=/workspace/output/labutopia-level1-pick.usda` と0 byteより大きいfile |
+| WebRTC server | `level1_pick --livestream ...` | `LABUTOPIA_WEBRTC_READY=<Tailscale-IP>:49100 camera=/World/Camera1` |
+| Client表示 | Mac版Streaming ClientでTailscale IPへ接続 | 黒画面ではなくlab sceneとrobot動作が継続表示される |
+
+#### ラボ全体・長時間タスクのデモ
+
+[LabUtopia公式サイト](https://rui-li023.github.io/labutopia-site/)はbenchmarkを、atomic manipulationから長時間のmobile
+manipulationまでの5段階として説明しています。固定した上流コミットのREADME本文は
+Level 4までしか列挙していませんが、repository内には次のLevel 5設定、task、controller、
+factory登録が含まれます。
+
+| config | 内容 | 推奨順 |
+|---|---|---:|
+| `level5_Navigation` | navigation lab全体でRidgebase + FrankaがA*経路を自律走行 | 1 |
+| `level5_Mobile_manipulation` | lab内を移動し、目的地点でビーカーを把持 | 2 |
+| `level4_OpenTransportPour` | 扉を開ける、把持、搬送、注ぐ、再搬送の長い卓上手順 | 3 |
+| `level4_DeviceOperation` | 装置を開け、複数ビーカーを出し入れし、buttonを押す | 4 |
+| `level4_LiquidMixing` | 複数容器の把持・注液・配置・button操作 | 高負荷 |
+
+最初は、学習済みmodelを必要とせずA*と組込みcontrollerで動く
+`level5_Navigation` を使います。`top_camera` をstreamへ割り当てるため、移動と
+周辺のlab配置を確認しやすい構成です。
+
+```bash
+TS_IP="$(isaac-vm tailscale-ip)"
+
+isaac-vm exec env \
+  ISAACSIM_PUBLIC_IP="$TS_IP" \
+  ISAACSIM_SIGNAL_PORT=49100 \
+  OMNI_KIT_ALLOW_ROOT=1 \
+  labutopia-run \
+    --config-name level5_Navigation \
+    --livestream \
+    --no-video \
+    --viewport-camera /World/Ridgebase/base_link/Camera_01 \
+    --width 960 \
+    --height 540
+```
+
+次がserver側の成功条件です。
+
+```text
+LABUTOPIA_WEBRTC_READY=<Tailscale-IP>:49100 camera=/World/Ridgebase/base_link/Camera_01
+```
+
+Clientではmobile robotの移動に伴ってlab背景が変化します。episode完了後にresetが
+行われると `Episode Stats: Success Rate = ...` が表示されます。前方視点にする場合は
+`--viewport-camera` を省略するか、`/World/Ridgebase/base_link/Camera` を指定します。
+
+Navigationが動いた後、最も包括的なデモを次で実行します。
+
+```bash
+TS_IP="$(isaac-vm tailscale-ip)"
+
+isaac-vm exec env \
+  ISAACSIM_PUBLIC_IP="$TS_IP" \
+  ISAACSIM_SIGNAL_PORT=49100 \
+  OMNI_KIT_ALLOW_ROOT=1 \
+  labutopia-run \
+    --config-name level5_Mobile_manipulation \
+    --livestream \
+    --no-video \
+    --viewport-camera /World/Ridgebase/base_link/Camera_01 \
+    --width 960 \
+    --height 540
+```
+
+このtaskは `Navigation completed, starting pick task!` の後に把持へ移行し、最後に
+`Pick task completed!` と成功または失敗理由を表示します。Level 5はLevel 1より
+初期化と1 episodeが長く、上流実装上も実験的です。まず960x540・1 clientで確認し、
+終了は起動terminalで `Ctrl+C` を使ってください。
+
 ## ローカルbuild（内部利用のみ）
 
 Dockerfileの再現性確認や、利用者自身の管理下で使う場合に限りbuildできます。Docker Engine、BuildKit、NVIDIA Container Toolkit、80 GB以上の空き容量を用意してください。
@@ -384,6 +487,7 @@ LabUtopiaのIsaac Sim 5.1はmedia UDP port 47998を使うため、今回のIdent
 - MatterixはIsaac Lab 3.0 betaを使うため、破壊的変更や一時的なregressionがあり得ます。
 - LabUtopia assetsはCC BY-NC 4.0です。商用利用向けではありません。
 - LabUtopiaのupstream commitを変えると、headless patchが適用できない場合があります。
+- LabUtopiaの `level1_pick` WebRTC表示は実機確認済みですが、Level 5のnavigationとmobile manipulationは上流に実装されている実験的taskで、この構成での完走確認はこれからです。
 - RTX 3090の24 GB VRAMは、高解像度camera、多数environment、複雑なsceneでは不足する場合があります。
 - 初回起動は公式イメージ、Python packages、LabUtopiaのGit LFS assets、shader cacheを取得するため時間がかかります。
 - VM経路はVast.aiのUbuntu 22.04 VM templateを基準にしています。GPU passthrough、`nvidia-smi`、systemdが正常なhostが必要です。
