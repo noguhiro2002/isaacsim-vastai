@@ -448,6 +448,10 @@ Clientではmobile robotの移動に伴ってlab背景が変化します。episo
 
 Navigationが動いた後、最も包括的なデモを次で実行します。
 
+2026-09-19に同じRTX 4060 Ti 16 GB、Vast.ai VM + Tailscaleの構成で、navigation、
+Frankaによるビーカー把持、episode成功、およびWebRTC Clientへの映像表示まで確認しました。
+表示用には実機で安定していたbase link cameraを使います。
+
 ```bash
 TS_IP="$(isaac-vm tailscale-ip)"
 
@@ -459,15 +463,36 @@ isaac-vm exec env \
     --config-name level5_Mobile_manipulation \
     --livestream \
     --no-video \
-    --viewport-camera /World/Ridgebase/base_link/Camera_01 \
+    --viewport-camera /World/Ridgebase/base_link/Camera \
     --width 960 \
     --height 540
 ```
 
-このtaskは `Navigation completed, starting pick task!` の後に把持へ移行し、最後に
-`Pick task completed!` と成功または失敗理由を表示します。Level 5はLevel 1より
-初期化と1 episodeが長く、上流実装上も実験的です。まず960x540・1 clientで確認し、
-終了は起動terminalで `Ctrl+C` を使ってください。
+次の4行とClient映像が成功条件です。
+
+```text
+LABUTOPIA_WEBRTC_READY=<Tailscale-IP>:49100 camera=/World/Ridgebase/base_link/Camera
+Navigation completed, starting pick task!
+Pick task completed!
+Pick successful - object lifted!
+```
+
+`/World/Ridgebase/panda_hand/Camera` は固定したupstream設定で
+`clipping_range: [0, 10.0]` となっており、実機確認ではviewportが黒画面になりました。
+taskそのものと収集処理は完走しますが、表示確認には使わずbase link cameraを使って
+ください。`/World/Ridgebase/base_link/Camera_01` はtop cameraとしてNavigationで
+表示確認済みです。
+
+成功ログとともに現れる次のmessageは、この実機確認では非致命的でした。
+
+- `OpenPI client not found`: `collect` modeの組込みcontrollerには影響しない
+- `GLFW initialization failed`: headless WebRTCで表示・taskとも継続する
+- `USD->Fabric: Unhandled array type string[]`、`UsdNoticeHandler`、camera aperture補正: 互換性warning
+- `OgnSdPostRenderVarToHost`、`IMemoryBudgetManagerFactory`、DLSS最小解像度: performance warning
+- `mdl_0061.mdl` を見つけられないMDL error: 一部materialの読込み問題だが、確認したepisodeではnavigation・把持・base link camera表示は成功した
+
+Level 5はLevel 1より初期化と1 episodeが長く、上流実装上も実験的です。まず
+960x540・1 clientで確認し、終了は起動terminalで `Ctrl+C` を使ってください。
 
 ## ローカルbuild（内部利用のみ）
 
@@ -507,7 +532,7 @@ LabUtopiaのIsaac Sim 5.1はmedia UDP port 47998を使うため、今回のIdent
 - MatterixはIsaac Lab 3.0 betaを使うため、破壊的変更や一時的なregressionがあり得ます。
 - LabUtopia assetsはCC BY-NC 4.0です。商用利用向けではありません。
 - LabUtopiaのupstream commitを変えると、headless patchが適用できない場合があります。
-- LabUtopiaの `level1_pick` とLevel 5 navigationのWebRTC表示は実機確認済みです。Level 5 navigationのepisode完走とmobile manipulationの完走確認はこれからです。
+- LabUtopiaの `level1_pick`、Level 5 navigation、Level 5 mobile manipulationのWebRTC表示は実機確認済みです。Mobile manipulationはnavigationからビーカー把持成功まで完走確認済みです。手首cameraは黒画面になるためbase link cameraを使います。
 - RTX 3090の24 GB VRAMは、高解像度camera、多数environment、複雑なsceneでは不足する場合があります。
 - 初回起動は公式イメージ、Python packages、LabUtopiaのGit LFS assets、shader cacheを取得するため時間がかかります。
 - VM経路はVast.aiのUbuntu 22.04 VM templateを基準にしています。GPU passthrough、`nvidia-smi`、systemdが正常なhostが必要です。
