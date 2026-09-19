@@ -38,6 +38,10 @@ of review, that commit contains no `LICENSE`, `COPYING`, or `NOTICE` file.
 The installers and local Dockerfile therefore do not initialize or copy the
 submodule. Asset-dependent Matterix environments remain unavailable until the
 rights holder publishes suitable terms or gives the user explicit permission.
+The README records a runtime procedure for users who have independently
+obtained the necessary rights and supplied the assets themselves. That
+procedure does not download, redistribute, or grant any rights to
+`Matterix_assets`.
 
 - Source reviewed: https://github.com/AccelerationConsortium/Matterix_assets/tree/0d856a0572d3e0823204264fd3d2700e15a43f4b
 

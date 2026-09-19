@@ -10,7 +10,7 @@ RTX 3090などを載せたVast.ai VMまたは通常Dockerインスタンスで�
 
 | 構成 | upstream commit | Python | Isaac Sim | Isaac Lab | PyTorch | 用途 |
 |---|---|---:|---:|---:|---:|---|
-| Matterix | `5d86bd6` | 3.12 | 6.0.1 | 3.0.0b2.post1 | 2.11.0 + cu128 | headless、USD smoke test、コード導入確認 |
+| Matterix | `5d86bd6` | 3.12 | 6.0.1 | 3.0.0b2.post1 | 2.11.0 + cu128 | headless、USD smoke test、利用者提供assetsで公式workflow + WebRTC確認 |
 | LabUtopia | `8df7278` | 3.11 | 5.1.0 | なし | 2.9.0 + cu126 | 非商用の研究・教育、headless、データ生成、USD保存 |
 
 Matterix の[現行README](https://github.com/AccelerationConsortium/Matterix/blob/5d86bd6e4fc7dd6ea83dead1d076c0176440be9e/README.md)は Isaac Lab 3.0.0b2.post1 とPyTorch 2.10.0を指定しています。Isaac Labのwheelは `torch>=2.10` とIsaac Sim 6.0.1を要求しますが、6.0.1公式コンテナのKit extensionはTorch 2.11を同梱しています。NCCL ABIの競合を避けるため、本構成では2.11.0に揃えます。公式 `docker/` の永続化方法やroot実行設定は参考にしましたが、同ディレクトリには古いIsaac Sim指定も残るため、そのままでは使っていません。
@@ -179,7 +179,102 @@ test -f /opt/matterix/source/matterix_assets/data/ASSETS_NOT_INSTALLED.md
 
 期待値はそれぞれ `5d86bd6e4fc7dd6ea83dead1d076c0176440be9e`、`3.0.0b2.post1`、終了code 0です。Isaac SimとUSD出力は前節の `isaac-usd-smoke` で確認します。
 
-Matterixのtaskはassetsを参照するため、この構成では実行対象外です。`Matterix_assets`の権利者から明示的な許可を得た場合だけ、利用者自身の責任で `/opt/matterix/source/matterix_assets/data` を用意してください。当リポジトリは取得手順や再配布物を提供しません。
+Matterixのtaskはassetsを参照するため、初期状態では実行対象外です。`Matterix_assets`の権利者から明示的な許可を得た場合だけ、利用者自身の責任で `/opt/matterix/source/matterix_assets/data` を用意してください。当リポジトリは取得手順や再配布物を提供しません。
+
+### Matterix公式workflowをWebRTCで表示する（VM）
+
+2026-09-19に、次の構成で公式の
+`Matterix-Test-Beaker-Lift-Franka-v1` / `pickup_beaker` workflowが動作し、
+Tailscale経由のIsaac Sim WebRTC Streaming Clientに映像が表示されることを確認しました。
+
+- NVIDIA公式 `nvcr.io/nvidia/isaac-sim:6.0.1`
+- Matterix `5d86bd6e4fc7dd6ea83dead1d076c0176440be9e`
+- Isaac Lab `3.0.0b2.post1`
+- RTX 4060 Ti 16 GB、system RAM約49 GB
+- NVIDIA driver `580.95.05`（動作確認値であり、NVIDIAの検証済みdriver要件を置き換えるものではありません）
+- Vast.ai VM、Docker host network、Tailscale
+
+MatterixのスクリプトはIsaac Simを自分で起動します。汎用の
+`isaacsim-webrtc` と同時には実行せず、managed containerを待機modeへ変更します。
+既存のpersistent workspaceは保持されます。
+
+```bash
+sudo NVIDIA_ACCEPT_EULA=Y ENABLE_WEBRTC=N FORCE_RECREATE=Y \
+  bash /tmp/isaac-vm-setup.sh matterix
+```
+
+利用権を確認したassetsを利用者自身で配置した後、task定義、workflow、必須の
+ビーカーUSDをsimulationなしで確認できます。
+
+```bash
+isaac-vm exec bash -lc '
+grep -n "Matterix-Test-Beaker-Lift-Franka-v1" \
+  /opt/matterix/source/matterix_tasks/matterix_tasks/test_dev_tasks/__init__.py
+grep -n "pickup_beaker" \
+  /opt/matterix/source/matterix_tasks/matterix_tasks/test_dev_tasks/test_franka_beaker_lift.py
+test -s \
+  /opt/matterix/source/matterix_assets/data/labware/beaker500ml/beaker-500ml-inst.usda
+'
+```
+
+Mac側のStreaming Clientを閉じてから、VM hostのSSH terminalで次を実行します。
+`docker exec` はlogin shellを通らないため、Matterix関連の環境変数を明示しています。
+
+```bash
+TS_IP="$(isaac-vm tailscale-ip)"
+
+sudo docker exec -it \
+  -e LIVESTREAM=2 \
+  -e ENABLE_CAMERAS=1 \
+  -e PUBLIC_IP="$TS_IP" \
+  -e ISAACSIM_PUBLIC_IP="$TS_IP" \
+  -e HUB__ARGS__DETECT_ONLY=true \
+  -e OMNI_KIT_ALLOW_ROOT=1 \
+  -e MATTERIX_PATH=/opt/matterix \
+  -e ISAACLAB_PATH=/opt/matterix \
+  -e ISAACSIM_PATH=/isaac-sim \
+  -w /opt/matterix \
+  isaacsim-vm-matterix \
+  /isaac-sim/python.sh scripts/run_workflow.py \
+    --task Matterix-Test-Beaker-Lift-Franka-v1 \
+    --workflow pickup_beaker \
+    --num_envs 1 \
+    --livestream 2 \
+    --enable_cameras \
+    --visualizer kit \
+    --max_visible_envs 1
+```
+
+`--visualizer kit` が重要です。Matterixのcustom step loopは物理演算を
+`render=False` で進めるため、`--enable_cameras` だけではState Machineが動いても
+Streaming Clientが黒画面のままになることを確認しています。Kit visualizerを明示すると
+WebRTCへ渡すinteractive viewportが作られます。最初の動作確認では
+`--rendering_mode performance` を付けず、標準rendering設定を使ってください。
+
+次の出力まで進んだ後、Streaming ClientのServer欄へportなしのTailscale IPv4を
+入力します。
+
+```text
+[ISAACLAB] AppLauncher initialization complete
+EPISODE 1
+STATE MACHINE STATUS (Actions: 5, Envs: 1)
+```
+
+終了は起動したSSH terminalで `Ctrl+C` です。managed container自体は待機modeの
+まま残るため、再実行時は同じ `docker exec` commandを使います。
+
+次のmessageは、上記の成功条件まで進みState Machineが動作している場合は既知の
+非致命的warningです。
+
+- `OmniHub: Hub failed to launch`（Hubを別serviceとして起動していない場合）
+- `grpc/health/v1/health.proto` の重複登録
+- `Failed to open [/var/run/utmp]`
+- `Possible version incompatibility ... IStageReaderWriter`
+- actuatorの `effort_limit` / `velocity_limit` deprecation
+- WebRTCのdynamic resize拒否（元のstream解像度で継続）
+
+この固定版の `run_workflow.py` は `--width` / `--height` をparserへ登録していないため、
+それらを渡すと `unrecognized arguments` で終了します。
 
 ## LabUtopiaを確認する
 
@@ -202,6 +297,54 @@ labutopia-run \
 ```
 
 実際のepisode実行・データ収集では `--exit-after-save` を外し、必要に応じて `--max-episodes N` を指定します。Hydraの `outputs/` はproject directoryに作られるため、保存したい結果は `/workspace/output` へ移すか、設定の出力先を同directoryへ変更してください。
+
+### LabUtopiaタスクをWebRTCで表示する（VM）
+
+LabUtopiaは上流の `main.py` だけではWebRTCを起動しないため、このrepositoryの
+patchはIsaac Sim 5.1公式Python livestream方式を追加します。`--livestream` は
+headless appを起動しつつUIをstream対象として残し、最初のtask cameraをactive
+viewportへ設定します。
+
+汎用の `isaacsim-webrtc` とLabUtopiaを同時起動しないよう、managed containerは
+待機modeにします。既存環境をWebRTC対応版へ更新する場合も、persistent workspaceは
+保持されます。
+
+```bash
+curl -fsSLo /tmp/isaac-vm-setup.sh \
+  https://raw.githubusercontent.com/noguhiro2002/isaacsim-vastai/main/vm/setup.sh
+
+sudo NVIDIA_ACCEPT_EULA=Y \
+  LABUTOPIA_ACCEPT_CC_BY_NC_4_0=Y \
+  ENABLE_WEBRTC=N \
+  FORCE_RECREATE=Y \
+  bash /tmp/isaac-vm-setup.sh labutopia
+```
+
+Mac側のStreaming Clientを閉じてから、VM hostで次を実行します。
+
+```bash
+TS_IP="$(isaac-vm tailscale-ip)"
+
+isaac-vm exec env \
+  ISAACSIM_PUBLIC_IP="$TS_IP" \
+  ISAACSIM_SIGNAL_PORT=49100 \
+  OMNI_KIT_ALLOW_ROOT=1 \
+  labutopia-run \
+    --config-name level1_pick \
+    --livestream \
+    --no-video \
+    --width 1280 \
+    --height 720
+```
+
+`LABUTOPIA_WEBRTC_READY=100.x.y.z:49100 camera=/World/Camera1` が表示されたら、
+Streaming ClientのServer欄へportなしのTailscale IPv4を入力します。映像は
+LabUtopiaが生成する最初のtask cameraです。別cameraを選ぶ場合は、例えば
+`--viewport-camera /World/Camera2` を追加します。
+
+RTX 4060 Ti 16 GBなどで負荷が高い場合は、最初に `--width 960 --height 540` へ
+下げてください。終了は起動terminalの `Ctrl+C` です。WebRTC endpointには
+認証・暗号化がないため、この手順ではfirewallでTailscaleからの接続だけを許可します。
 
 ## ローカルbuild（内部利用のみ）
 
@@ -237,7 +380,7 @@ LabUtopiaのIsaac Sim 5.1はmedia UDP port 47998を使うため、今回のIdent
 
 ## known limitations
 
-- Matterixのassetsは意図的に未導入です。assets依存taskは動きません。
+- Matterixのassetsは意図的に未導入です。初期状態ではassets依存taskは動きません。利用権を確認したassetsを利用者自身で配置した場合は、VM + Tailscaleで公式workflowのWebRTC表示を確認済みです。
 - MatterixはIsaac Lab 3.0 betaを使うため、破壊的変更や一時的なregressionがあり得ます。
 - LabUtopia assetsはCC BY-NC 4.0です。商用利用向けではありません。
 - LabUtopiaのupstream commitを変えると、headless patchが適用できない場合があります。

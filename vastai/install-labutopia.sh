@@ -17,10 +17,11 @@ fi
 labutopia_repository="${LABUTOPIA_REPOSITORY:-https://github.com/Rui-li023/LabUtopia.git}"
 labutopia_ref="${LABUTOPIA_REF:-8df72784265c375a327ffa3f0a0cf8c676f229a7}"
 labutopia_path="${LABUTOPIA_PATH:-/opt/labutopia}"
+labutopia_integration_revision="${labutopia_ref}:webrtc-v1"
 
 bootstrap_install_helpers labutopia
 
-if bootstrap_marker_matches labutopia "${labutopia_ref}" && \
+if bootstrap_marker_matches labutopia "${labutopia_integration_revision}" && \
   [[ -d "${labutopia_path}/.git" ]]; then
   bootstrap_log "LabUtopia ${labutopia_ref} is already installed"
   exit 0
@@ -32,6 +33,9 @@ bootstrap_apt_install \
 bootstrap_checkout "${labutopia_repository}" "${labutopia_ref}" "${labutopia_path}"
 git -C "${labutopia_path}" lfs install --local
 git -C "${labutopia_path}" lfs pull
+# The pinned upstream main.py uses CRLF and trailing spaces. Normalize both so
+# the maintained patch applies deterministically in Docker and runtime paths.
+sed -i 's/[[:space:]]\+$//' "${labutopia_path}/main.py"
 
 patch_file="${bootstrap_repo_root}/docker/labutopia/labutopia-headless.patch"
 patch_options=(--ignore-space-change --ignore-whitespace)
@@ -52,5 +56,5 @@ fi
   "docstring-parser==0.16" \
   "lxml>=4.9.2,<5"
 
-bootstrap_write_marker labutopia "${labutopia_ref}"
+bootstrap_write_marker labutopia "${labutopia_integration_revision}"
 bootstrap_log "LabUtopia installed from upstream for an accepted CC BY-NC 4.0 use"

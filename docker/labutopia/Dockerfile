@@ -55,7 +55,8 @@ RUN test "${LABUTOPIA_ACCEPT_CC_BY_NC_4_0}" = "Y" || \
       sleep $((attempt * 10)); \
     done && \
     git -C "${LABUTOPIA_PATH}" checkout --detach FETCH_HEAD && \
-    git -C "${LABUTOPIA_PATH}" lfs pull
+    git -C "${LABUTOPIA_PATH}" lfs pull && \
+    sed -i 's/[[:space:]]\+$//' "${LABUTOPIA_PATH}/main.py"
 
 COPY docker/labutopia/labutopia-headless.patch /tmp/labutopia-headless.patch
 

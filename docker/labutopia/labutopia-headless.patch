@@ -1,8 +1,8 @@
 diff --git a/main.py b/main.py
-index e120e29..904b944 100644
+index 2deb433..cbd4dca 100644
 --- a/main.py
 +++ b/main.py
-@@ -1,3 +1,10 @@
+@@ -1,5 +1,12 @@
  import os
 +import sys
  import argparse
@@ -13,9 +13,29 @@ index e120e29..904b944 100644
 +sys.path.insert(0, PROJECT_ROOT)
 +import utils  # noqa: F401
  from isaacsim import SimulationApp
-@@ -13,5 +13,11 @@ def parse_args():
-     parser.add_argument('--no-video', action='store_true', 
+
+ # Parse command line arguments
+@@ -10,21 +17,63 @@ def parse_args():
+                        help='Backend choice: numpy (CPU) or gpu')
+     parser.add_argument('--headless', action='store_true',
+                        help='Run in headless mode (default is with GUI)')
+-    parser.add_argument('--no-video', action='store_true',
++    parser.add_argument('--no-video', action='store_true',
                         help='Disable video display and saving')
++    parser.add_argument('--livestream', action='store_true',
++                       help='Enable the Isaac Sim WebRTC Streaming Client endpoint')
++    parser.add_argument('--public-ip', type=str,
++                       default=os.environ.get('ISAACSIM_PUBLIC_IP') or os.environ.get('ISAACSIM_HOST'),
++                       help='Address advertised to the WebRTC client (defaults to ISAACSIM_PUBLIC_IP)')
++    parser.add_argument('--signal-port', type=int,
++                       default=int(os.environ.get('ISAACSIM_SIGNAL_PORT', '49100')),
++                       help='WebRTC TCP signaling port (default: 49100)')
++    parser.add_argument('--width', type=int, default=1280,
++                       help='Stream viewport width (default: 1280)')
++    parser.add_argument('--height', type=int, default=720,
++                       help='Stream viewport height (default: 720)')
++    parser.add_argument('--viewport-camera', type=str, default=None,
++                       help='USD camera prim shown in the streamed viewport (defaults to the first task camera)')
 +    parser.add_argument('--max-episodes', type=int, default=None,
 +                       help='Override max_episodes for smoke tests or short runs')
 +    parser.add_argument('--save-usd', type=str, default=None,
@@ -25,25 +45,67 @@ index e120e29..904b944 100644
      parser.add_argument('--config-name', type=str, default='level3_Heat_Liquid',
                         help='Configuration file name (without .yaml extension)')
      parser.add_argument('--config-dir', type=str, default='config',
-@@ -23,7 +27,7 @@ args = parse_args()
- 
- # Set up simulation app based on arguments
+                        help='Configuration directory path (default: config)')
+-    return parser.parse_args()
++    parsed_args = parser.parse_args()
++    if parsed_args.width <= 0 or parsed_args.height <= 0:
++        parser.error('--width and --height must be positive')
++    if not 1 <= parsed_args.signal_port <= 65535:
++        parser.error('--signal-port must be between 1 and 65535')
++    if parsed_args.livestream and not parsed_args.public_ip:
++        parser.error('--public-ip or ISAACSIM_PUBLIC_IP is required with --livestream')
++    return parsed_args
+
+ # Get command line arguments
+ args = parse_args()
+
+-# Set up simulation app based on arguments
++# Set up simulation app based on arguments. Isaac Sim 5.1's official native
++# Python livestream sample uses a headless app with the UI kept visible.
++extra_args = ["--/rtx/raytracing/fractionalCutoutOpacity=true"]
++if args.livestream:
++    extra_args.extend([
++        f"--/app/livestream/publicEndpointAddress={args.public_ip}",
++        f"--/app/livestream/port={args.signal_port}",
++    ])
++
  simulation_config = {
 -    "headless": False,
-+    "headless": args.headless,
-     "extra_args": ["--/rtx/raytracing/fractionalCutoutOpacity=true"],
+-    "extra_args": ["--/rtx/raytracing/fractionalCutoutOpacity=true"],
++    "width": args.width,
++    "height": args.height,
++    "window_width": args.width,
++    "window_height": args.height,
++    "headless": args.headless or args.livestream,
++    "hide_ui": False if args.livestream else None,
++    "renderer": "RaytracedLighting",
++    "display_options": 3286,
++    "extra_args": extra_args,
  }
- 
-@@ -42,6 +46,8 @@ def main():
+
+ simulation_app = SimulationApp(simulation_config)
+@@ -40,6 +89,11 @@ from isaacsim.core.utils.stage import add_reference_to_stage
+ import omni.usd
+ from isaacsim.core.utils import extensions
+
++if args.livestream:
++    simulation_app.set_setting("/app/window/drawMouse", True)
++    extensions.enable_extension("omni.services.livestream.nvcf")
++    simulation_app.update()
++
+ extensions.enable_extension("omni.physx.bundle")
+ extensions.enable_extension("omni.usdphysics.ui")
+
+@@ -53,6 +107,8 @@ def main():
      cfg = hydra.compose(config_name=args.config_name)
      os.makedirs(cfg.multi_run.run_dir, exist_ok=True)
      OmegaConf.save(cfg, cfg.multi_run.run_dir + "/config.yaml")
 +    if args.max_episodes is not None:
 +        cfg.max_episodes = args.max_episodes
- 
+
      # Set backend based on command line arguments
      if args.backend == 'gpu':
-@@ -65,10 +71,10 @@ def main():
+@@ -65,10 +121,10 @@ def main():
      # Override configuration based on command line arguments
      if args.no_video:
          save_video = False
@@ -52,13 +114,32 @@ index e120e29..904b944 100644
          save_video = True
 -        show_video = True
 +    # cv2.imshow requires a display even when Isaac Sim itself is headless.
-+    show_video = not args.headless and not args.no_video
- 
++    show_video = not (args.headless or args.livestream) and not args.no_video
+
      robot = create_robot(
          cfg.robot.type,
-@@ -97,5 +102,15 @@ def main():
+@@ -96,6 +152,34 @@ def main():
+
      video_writer = None
      task.reset()
++
++    if args.livestream:
++        from omni.kit.viewport.utility import get_active_viewport
++
++        viewport = get_active_viewport()
++        camera_path = args.viewport_camera
++        if camera_path is None and len(cfg.cameras) > 0:
++            camera_path = str(cfg.cameras[0].prim_path)
++        if viewport is None:
++            raise RuntimeError('No active viewport is available for livestreaming')
++        if camera_path:
++            viewport.set_active_camera(camera_path)
++        simulation_app.update()
++        print(
++            f"LABUTOPIA_WEBRTC_READY={args.public_ip}:{args.signal_port} "
++            f"camera={camera_path or 'default'}",
++            flush=True,
++        )
 +
 +    if args.save_usd:
 +        output_path = os.path.abspath(args.save_usd)
@@ -69,12 +150,12 @@ index e120e29..904b944 100644
 +        if args.exit_after_save:
 +            simulation_app.close()
 +            return
-     
+
      while simulation_app.is_running():
          world.step(render=True)
 diff --git a/utils/__init__.py b/utils/__init__.py
 new file mode 100644
-index 0000000..a58dc8a
+index 0000000..ac95afc
 --- /dev/null
 +++ b/utils/__init__.py
 @@ -0,0 +1 @@
