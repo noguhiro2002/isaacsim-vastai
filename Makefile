@@ -14,6 +14,7 @@ build-labutopia:
 
 check: check-distribution
 	bash -n docker/common/*.sh docker/labutopia/*.sh vastai/*.sh vm/*.sh vm/isaac-vm
+	grep -q -- '--user root' vm/setup.sh
 	python3 -c "compile(open('docker/common/isaac-usd-smoke.py', encoding='utf-8').read(), 'docker/common/isaac-usd-smoke.py', 'exec')"
 	python3 -m json.tool vastai/matterix-template.json >/dev/null
 	python3 -m json.tool vastai/labutopia-template.json >/dev/null

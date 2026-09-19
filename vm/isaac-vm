@@ -43,9 +43,11 @@ case "${command_name}" in
     "${docker_command[@]}" ps -a --filter "name=^/${container_name}$"
     container_running="$("${docker_command[@]}" inspect --format '{{.State.Running}}' "${container_name}")"
     if [[ "${container_running}" == "true" ]]; then
-      "${docker_command[@]}" exec "${container_name}" nvidia-smi \
+      if ! "${docker_command[@]}" exec "${container_name}" nvidia-smi \
         --query-gpu=name,driver_version,memory.used,memory.total,utilization.gpu \
-        --format=csv,noheader
+        --format=csv,noheader; then
+        printf 'container changed state before the GPU check; inspect logs\n' >&2
+      fi
     else
       printf 'container is stopped\n'
     fi

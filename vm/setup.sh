@@ -243,6 +243,7 @@ if [[ "${container_exists}" == "Y" ]]; then
   existing_mode="$(docker inspect --format '{{ index .Config.Labels "io.isaacsim-vastai.webrtc" }}' "${container_name}")"
   existing_image="$(docker inspect --format '{{.Config.Image}}' "${container_name}")"
   existing_network="$(docker inspect --format '{{.HostConfig.NetworkMode}}' "${container_name}")"
+  existing_user="$(docker inspect --format '{{.Config.User}}' "${container_name}")"
   existing_public_ip="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "${container_name}" \
     | sed -n 's/^ISAACSIM_PUBLIC_IP=//p' | head -n 1)"
   if [[ "${existing_target}" != "${target}" ]]; then
@@ -252,11 +253,12 @@ if [[ "${container_exists}" == "Y" ]]; then
   if [[ "${existing_mode}" != "${enable_webrtc}" || \
     "${existing_image}" != "${isaac_image}" || \
     "${existing_network}" != "host" || \
+    "${existing_user}" != "root" || \
     "${existing_public_ip}" != "${tailscale_ip}" ]]; then
     cat >&2 <<EOF
 [vm-setup] the existing container has different settings.
-[vm-setup] existing: image=${existing_image}, ENABLE_WEBRTC=${existing_mode:-unknown}, network=${existing_network}, IP=${existing_public_ip:-unknown}
-[vm-setup] requested: image=${isaac_image}, ENABLE_WEBRTC=${enable_webrtc}, network=host, IP=${tailscale_ip}
+[vm-setup] existing: image=${existing_image}, ENABLE_WEBRTC=${existing_mode:-unknown}, network=${existing_network}, user=${existing_user:-image-default}, IP=${existing_public_ip:-unknown}
+[vm-setup] requested: image=${isaac_image}, ENABLE_WEBRTC=${enable_webrtc}, network=host, user=root, IP=${tailscale_ip}
 [vm-setup] re-run with FORCE_RECREATE=Y; persistent /workspace data is retained.
 EOF
     exit 73
@@ -278,6 +280,7 @@ else
     --hostname "${container_name}"
     --restart unless-stopped
     --network host
+    --user root
     --gpus all
     --shm-size 8g
     --ulimit memlock=-1
