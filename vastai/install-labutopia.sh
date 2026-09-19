@@ -17,7 +17,7 @@ fi
 labutopia_repository="${LABUTOPIA_REPOSITORY:-https://github.com/Rui-li023/LabUtopia.git}"
 labutopia_ref="${LABUTOPIA_REF:-8df72784265c375a327ffa3f0a0cf8c676f229a7}"
 labutopia_path="${LABUTOPIA_PATH:-/opt/labutopia}"
-labutopia_integration_revision="${labutopia_ref}:webrtc-v2"
+labutopia_integration_revision="${labutopia_ref}:webrtc-v1"
 
 bootstrap_install_helpers labutopia
 

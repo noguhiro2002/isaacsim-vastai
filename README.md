@@ -400,6 +400,19 @@ factory登録が含まれます。
 `level5_Navigation` を使います。`top_camera` をstreamへ割り当てるため、移動と
 周辺のlab配置を確認しやすい構成です。
 
+2026-09-19に、RTX 4060 Ti 16 GBとVast.ai VM + Tailscaleの構成で、task cameraを
+通常どおり有効にしたままnavigation lab、Ridgebase + Franka、移動中の映像が
+WebRTC Clientへ表示されることを確認しました。実行前に、以前起動したIsaac Simや
+別のCUDA workloadを終了し、同じGPUではこのtaskだけが動く状態にしてください。
+
+```bash
+nvidia-smi
+sudo docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+```
+
+以前の実行terminalが残っている場合は、そのterminalで `Ctrl+C` を押してから
+次のcommandを実行します。
+
 ```bash
 TS_IP="$(isaac-vm tailscale-ip)"
 
@@ -411,7 +424,6 @@ isaac-vm exec env \
     --config-name level5_Navigation \
     --livestream \
     --no-video \
-    --disable-task-cameras \
     --viewport-camera /World/Ridgebase/base_link/Camera_01 \
     --width 960 \
     --height 540
@@ -423,22 +435,16 @@ isaac-vm exec env \
 LABUTOPIA_WEBRTC_READY=<Tailscale-IP>:49100 camera=/World/Ridgebase/base_link/Camera_01
 ```
 
+この表示に続き、Clientにnavigation labとrobotが描画されればstream開始成功です。
 Clientではmobile robotの移動に伴ってlab背景が変化します。episode完了後にresetが
 行われると `Episode Stats: Success Rate = ...` が表示されます。前方視点にする場合は
 `--viewport-camera` を省略するか、`/World/Ridgebase/base_link/Camera` を指定します。
-`--disable-task-cameras` はdataset用のReplicator camera読出しだけを止め、WebRTCの
-viewportと物理・自律走行は維持します。Level 5で `carb.cudainterop.plugin` の
-`cudaErrorNoDevice` に続いてReplicator overscanの `NoneType` 例外が出る場合の
-視覚デモ用回避策です。camera画像を含むdataset生成ではこのoptionを使えません。
-回避策を使う前にhostとcontainerの両方でGPUが見えることを確認します。
 
-```bash
-nvidia-smi
-isaac-vm exec nvidia-smi
-```
-
-どちらかが失敗する場合はcamera処理ではなくhost driverまたはGPU passthroughの問題なので、
-VMを再起動するか別hostへ移してください。両方が成功する場合に上記optionを使います。
+`carb.cudainterop.plugin` の `cudaErrorNoDevice` に続いてReplicatorのoverscan処理が
+`NoneType` errorになる場合は、まず `nvidia-smi` で別のIsaac Sim/CUDA processが
+残っていないか確認してください。今回この組合せは同一GPU上の別processとの競合時に
+発生し、それらを終了すると上記の通常commandで表示できました。Level 5固有のcamera
+不具合とは確認されていないため、camera設定を無効化する前にprocess競合を解消します。
 
 Navigationが動いた後、最も包括的なデモを次で実行します。
 
@@ -453,7 +459,6 @@ isaac-vm exec env \
     --config-name level5_Mobile_manipulation \
     --livestream \
     --no-video \
-    --disable-task-cameras \
     --viewport-camera /World/Ridgebase/base_link/Camera_01 \
     --width 960 \
     --height 540
@@ -502,7 +507,7 @@ LabUtopiaのIsaac Sim 5.1はmedia UDP port 47998を使うため、今回のIdent
 - MatterixはIsaac Lab 3.0 betaを使うため、破壊的変更や一時的なregressionがあり得ます。
 - LabUtopia assetsはCC BY-NC 4.0です。商用利用向けではありません。
 - LabUtopiaのupstream commitを変えると、headless patchが適用できない場合があります。
-- LabUtopiaの `level1_pick` WebRTC表示は実機確認済みですが、Level 5のnavigationとmobile manipulationは上流に実装されている実験的taskで、この構成での完走確認はこれからです。
+- LabUtopiaの `level1_pick` とLevel 5 navigationのWebRTC表示は実機確認済みです。Level 5 navigationのepisode完走とmobile manipulationの完走確認はこれからです。
 - RTX 3090の24 GB VRAMは、高解像度camera、多数environment、複雑なsceneでは不足する場合があります。
 - 初回起動は公式イメージ、Python packages、LabUtopiaのGit LFS assets、shader cacheを取得するため時間がかかります。
 - VM経路はVast.aiのUbuntu 22.04 VM templateを基準にしています。GPU passthrough、`nvidia-smi`、systemdが正常なhostが必要です。
